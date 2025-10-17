@@ -2,10 +2,9 @@
 name = "lzsa-sys"
 version = "1.0.0"
 edition = "2024"
-authors = ["Your Name <your.email@example.com>"]
 license = "Zlib"
-description = "Low-level Rust bindings to LZSA compression library"
-repository = "https://github.com/yourusername/lzsa-sys"
+description = "Rust bindings for LZSA compression"
+repository = "https://github.com/tommyo123/lzsa-sys"
 links = "lzsa"
 
 [lib]
@@ -17,6 +16,14 @@ name = "lzsa_sys"
 [build-dependencies]
 cmake = "0.1"
 bindgen = "0.69"
+cc = "1.2.41"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = 'abort'
 
 [features]
 default = ["static"]

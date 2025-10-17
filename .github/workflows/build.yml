@@ -1,0 +1,186 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows with MSVC
+          - os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-msvc
+
+          # Linux (Debian 12 compatible via Ubuntu)
+          - os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # Important for lzsa-upstream submodule
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+          targets: ${{ matrix.target }}
+
+      # Linux-specific dependencies
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      # Windows-specific dependencies (CMake comes with the runner)
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
+
+      - name: Cache target directory
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-target-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-${{ matrix.rust }}-
+
+      - name: Build (Debug)
+        run: cargo build --verbose
+
+      - name: Run tests (Debug)
+        run: cargo test --verbose
+
+      - name: Build (Release)
+        run: cargo build --release --verbose
+
+      - name: Run tests (Release)
+        run: cargo test --release --verbose
+
+      - name: Run examples
+        run: |
+          cargo run --release --example simple
+          cargo run --release --example all_modes
+
+      # Package artifacts
+      - name: Prepare artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp target/release/lzsa_sys.lib artifacts/ || true
+          cp target/release/lzsa_sys.dll artifacts/ || true
+          cp target/release/examples/*.exe artifacts/ || true
+
+      - name: Prepare artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p artifacts
+          cp target/release/liblzsa_sys.a artifacts/ || true
+          cp target/release/liblzsa_sys.so artifacts/ || true
+          cp target/release/examples/* artifacts/ || true
+          chmod +x artifacts/* || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lzsa-sys-${{ matrix.os }}-${{ matrix.target }}
+          path: artifacts/
+          retention-days: 7
+
+  # Extra job to verify everything works together
+  integration-test:
+    name: Integration Test
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Build and test everything
+        run: |
+          cargo build --release --all-targets
+          cargo test --release --all-targets
+
+      - name: Check documentation
+        run: cargo doc --no-deps --document-private-items
+
+  # Optional: Run clippy for code quality
+  clippy:
+    name: Clippy (Code Quality)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  # Optional: Formatting check
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt -- --check
