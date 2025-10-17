@@ -61,3 +61,6 @@ Desktop.ini
 
 # Qodo editor config
 .qodo/
+
+# other
+.cache/
