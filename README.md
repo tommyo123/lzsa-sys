@@ -27,7 +27,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lzsa-sys = "1.0"
+lzsa-sys = { git = "https://github.com/tommyo123/lzsa-sys" }
 ```
 
 ### Build Requirements
@@ -184,8 +184,6 @@ This project (lzsa-sys) is dual-licensed under:
 - **CC0 (Public Domain)** for matchfinder.c
 
 This matches the licensing of the underlying LZSA compression library by Emmanuel Marty.
-
-# License
 
 ## lzsa-sys Rust Bindings
 
