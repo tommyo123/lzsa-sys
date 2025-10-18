@@ -1,11 +1,12 @@
-
 name: Build and Test
 
 on:
   push:
-    branches: [ main, master, develop ]
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v0.1.0, etc.
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop ]  # Still test PRs
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
 
 jobs:
   build:
@@ -16,12 +17,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows with MSVC
+          # Windows med MSVC
           - os: windows-latest
             rust: stable
             target: x86_64-pc-windows-msvc
 
-          # Linux (Debian 12 compatible via Ubuntu)
+          # Linux (Debian 12 kompatibel via Ubuntu)
           - os: ubuntu-latest
             rust: stable
             target: x86_64-unknown-linux-gnu
@@ -30,7 +31,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive  # Important for lzsa-upstream submodule
+          submodules: recursive  # Viktig for lzsa-upstream submodule
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -38,14 +39,14 @@ jobs:
           toolchain: ${{ matrix.rust }}
           targets: ${{ matrix.target }}
 
-      # Linux-specific dependencies
+      # Linux-spesifikke dependencies
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake
 
-      # Windows-specific dependencies (CMake comes with the runner)
+      # Windows-spesifikke dependencies (CMake kommer med runner)
       - name: Setup MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -91,7 +92,7 @@ jobs:
           cargo run --release --example simple
           cargo run --release --example all_modes
 
-      # Package artifacts
+      # Pakk artifakter
       - name: Prepare artifacts (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -117,7 +118,7 @@ jobs:
           path: artifacts/
           retention-days: 7
 
-  # Extra job to verify that everything works together
+  # Ekstra jobb for å verifisere at alt fungerer sammen
   integration-test:
     name: Integration Test
     needs: build
@@ -145,7 +146,7 @@ jobs:
       - name: Check documentation
         run: cargo doc --no-deps --document-private-items --lib
 
-  # Optional: Run clippy for code quality
+  # Optional: Kjør clippy for code quality
   clippy:
     name: Clippy (Code Quality)
     runs-on: ubuntu-latest
