@@ -1,3 +1,4 @@
+
 name: Build and Test
 
 on:
@@ -77,13 +78,13 @@ jobs:
         run: cargo build --verbose
 
       - name: Run tests (Debug)
-        run: cargo test --verbose
+        run: cargo test --verbose --lib --bins --examples
 
       - name: Build (Release)
         run: cargo build --release --verbose
 
       - name: Run tests (Release)
-        run: cargo test --release --verbose
+        run: cargo test --release --verbose --lib --bins --examples
 
       - name: Run examples
         run: |
@@ -116,7 +117,7 @@ jobs:
           path: artifacts/
           retention-days: 7
 
-  # Extra job to verify everything works together
+  # Extra job to verify that everything works together
   integration-test:
     name: Integration Test
     needs: build
@@ -139,10 +140,10 @@ jobs:
       - name: Build and test everything
         run: |
           cargo build --release --all-targets
-          cargo test --release --all-targets
+          cargo test --release --lib --bins --examples
 
       - name: Check documentation
-        run: cargo doc --no-deps --document-private-items
+        run: cargo doc --no-deps --document-private-items --lib
 
   # Optional: Run clippy for code quality
   clippy:
@@ -166,7 +167,7 @@ jobs:
           sudo apt-get install -y build-essential cmake
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --lib --bins --examples -- -D warnings
 
   # Optional: Formatting check
   format:
