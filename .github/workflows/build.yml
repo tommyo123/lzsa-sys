@@ -1,331 +1,188 @@
-name: Release
+name: Build and Test
 
 on:
   push:
     tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (e.g., 0.9.1-test)'
-        required: true
-        default: '0.9.1-test'
-      create_release:
-        description: 'Create GitHub release?'
-        required: true
-        type: boolean
-        default: false
-
-env:
-  CARGO_TERM_COLOR: always
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v0.1.0, etc.
+  pull_request:
+    branches: [ main, master, develop ]  # Still test PRs
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
 
 jobs:
-  # Windows build (MSI + Portable)
-  build-windows:
-    runs-on: windows-latest
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows med MSVC
+          - os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-msvc
+
+          # Linux (Debian 12 kompatibel via Ubuntu)
+          - os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          submodules: recursive  # Viktig for lzsa-upstream submodule
 
-      - name: Configure Git for private repos
-        run: |
-          git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Set version
-        id: version
-        run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $fullVersion = "${{ github.event.inputs.version }}"
-          } else {
-            $fullVersion = "${{ github.ref_name }}"
-          }
-          
-          $fullVersion = $fullVersion -replace '^v', ''
-          
-          if ($fullVersion -match '^(\d+\.\d+\.\d+)') {
-            $wixVersion = $matches[1] + '.0'
-          } else {
-            $wixVersion = '0.9.0.0'
-          }
-          
-          echo "VERSION=$fullVersion" >> $env:GITHUB_ENV
-          echo "WIX_VERSION=$wixVersion" >> $env:GITHUB_ENV
-          echo "version=$fullVersion" >> $env:GITHUB_OUTPUT
-          echo "wix_version=$wixVersion" >> $env:GITHUB_OUTPUT
-          
-          Write-Host "Full version: $fullVersion"
-          Write-Host "WiX version: $wixVersion"
-
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust }}
+          targets: ${{ matrix.target }}
 
-      - name: Build Release
+      # Linux-spesifikke dependencies
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
-          export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
-          export LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH
-          export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
-          cargo build --release --verbose
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
 
-      - name: Install WiX Toolset
-        run: |
-          choco install wixtoolset -y
-          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
+      # Windows-spesifikke dependencies (CMake kommer med runner)
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Build MSI
-        run: |
-          candle.exe -nologo -ext WixUIExtension -ext WixUtilExtension `
-            -dCargoTargetBinDir=target\release `
-            -dVersion="${{ env.WIX_VERSION }}" `
-            wix\main.wxs
-          light.exe -nologo -ext WixUIExtension -ext WixUtilExtension `
-            -sval -spdb `
-            -out vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-windows.msi `
-            main.wixobj
-
-      - name: Create Portable Package
-        run: |
-          New-Item -ItemType Directory -Force -Path portable-package
-          
-          Copy-Item target\release\vice-snapshot-to-prg-converter.exe portable-package\
-          Copy-Item external-utils\vcruntime140.dll portable-package\
-          Copy-Item README.md portable-package\
-          Copy-Item CHANGELOG.md portable-package\
-          
-          @"
-          VICE Snapshot to PRG Converter - Portable Edition
-          ==================================================
-          
-          Version: ${{ env.VERSION }}
-          
-          This is a portable version that requires no installation.
-          
-          HOW TO USE:
-          1. Extract this ZIP file to any folder you like
-          2. Run vice-snapshot-to-prg-converter.exe
-          3. Done!
-          
-          The program will:
-          - Create temporary files in your system's temp folder
-          - Not write anything to registry or Program Files
-          
-          REQUIREMENTS:
-          - Windows 7 or later (64-bit)
-          - Visual C++ Redistributable 2015-2022
-            (included as vcruntime140.dll if not already installed)
-          
-          To completely remove:
-          - Just delete the folder you extracted to
-          - Optionally clean temp folder: %TEMP%\ViceSnapshotConvert.*
-          
-          For full documentation, see README.md or visit:
-          https://github.com/tommyo123/Vice_Snapshot_to_PRG
-          "@ | Out-File -FilePath portable-package\README-PORTABLE.txt -Encoding UTF8
-          
-          Compress-Archive -Force -Path portable-package\* `
-            -DestinationPath vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-windows-portable.zip
-
-      - name: Upload Windows Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Cache cargo registry
+        uses: actions/cache@v4
         with:
-          name: windows-release
-          path: |
-            vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-windows.msi
-            vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-windows-portable.zip
-          retention-days: 7
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
 
-  # Linux build (tar.gz)
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Cache cargo index
+        uses: actions/cache@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
 
-      - name: Configure Git for private repos
-        run: |
-          git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Set version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${{ github.ref_name }}"
-          fi
-          VERSION="${VERSION#v}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Cache target directory
+        uses: actions/cache@v4
         with:
-          toolchain: stable
+          path: target
+          key: ${{ runner.os }}-target-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-${{ matrix.rust }}-
 
-      - name: Build Release
+      - name: Build (Debug)
+        run: cargo build --verbose
+
+      - name: Run tests (Debug)
+        run: cargo test --verbose --lib --bins --examples
+
+      - name: Build (Release)
         run: cargo build --release --verbose
 
-      - name: Create tar.gz package
-        run: |
-          mkdir -p package
-          cp target/release/vice-snapshot-to-prg-converter package/
-          cp README.md package/
-          cp CHANGELOG.md package/
-          
-          cat > package/README-LINUX.txt << 'EOF'
-          VICE Snapshot to PRG Converter - Linux Edition
-          ===============================================
-          
-          Version: ${{ env.VERSION }}
-          
-          HOW TO USE:
-          1. Extract this archive
-          2. Make the binary executable: chmod +x vice-snapshot-to-prg-converter
-          3. Run: ./vice-snapshot-to-prg-converter
-          
-          The program will create temporary files in /tmp/ViceSnapshotConvert.*
-          
-          For full documentation, see README.md or visit:
-          https://github.com/tommyo123/Vice_Snapshot_to_PRG
-          EOF
-          
-          cd package
-          tar -czf ../vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-linux.tar.gz *
+      - name: Run tests (Release)
+        run: cargo test --release --verbose --lib --bins --examples
 
-      - name: Upload Linux Artifacts
+      - name: Run examples
+        run: |
+          cargo run --release --example simple
+          cargo run --release --example all_modes
+
+      # Pakk artifakter
+      - name: Prepare artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp target/release/lzsa_sys.lib artifacts/ || true
+          cp target/release/lzsa_sys.dll artifacts/ || true
+          cp target/release/examples/*.exe artifacts/ || true
+
+      - name: Prepare artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p artifacts
+          cp target/release/liblzsa_sys.a artifacts/ || true
+          cp target/release/liblzsa_sys.so artifacts/ || true
+          cp target/release/examples/* artifacts/ || true
+          chmod +x artifacts/* || true
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-release
-          path: vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-linux.tar.gz
+          name: lzsa-sys-${{ matrix.os }}-${{ matrix.target }}
+          path: artifacts/
           retention-days: 7
 
-  # macOS build (tar.gz)
-  build-macos:
-    runs-on: macos-latest
+  # Ekstra jobb for å verifisere at alt fungerer sammen
+  integration-test:
+    name: Integration Test
+    needs: build
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          submodules: recursive
 
-      - name: Configure Git for private repos
-        run: |
-          git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Set version
-        id: version
+      - name: Install dependencies
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${{ github.ref_name }}"
-          fi
-          VERSION="${VERSION#v}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Build and test everything
+        run: |
+          cargo build --release --all-targets
+          cargo test --release --lib --bins --examples
+
+      - name: Check documentation
+        run: cargo doc --no-deps --document-private-items --lib
+
+  # Optional: Kjør clippy for code quality
+  clippy:
+    name: Clippy (Code Quality)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          components: clippy
 
-      - name: Build Release
-        run: cargo build --release --verbose
-
-      - name: Create tar.gz package
+      - name: Install dependencies
         run: |
-          mkdir -p package
-          cp target/release/vice-snapshot-to-prg-converter package/
-          cp README.md package/
-          cp CHANGELOG.md package/
-          
-          cat > package/README-MACOS.txt << 'EOF'
-          VICE Snapshot to PRG Converter - macOS Edition
-          ===============================================
-          
-          Version: ${{ env.VERSION }}
-          
-          HOW TO USE:
-          1. Extract this archive
-          2. Make the binary executable: chmod +x vice-snapshot-to-prg-converter
-          3. Run: ./vice-snapshot-to-prg-converter
-          
-          If you get a security warning, go to System Preferences > Security & Privacy
-          and allow the application to run.
-          
-          The program will create temporary files in /tmp/ViceSnapshotConvert.*
-          
-          For full documentation, see README.md or visit:
-          https://github.com/tommyo123/Vice_Snapshot_to_PRG
-          EOF
-          
-          cd package
-          tar -czf ../vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-macos.tar.gz *
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
 
-      - name: Upload macOS Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-release
-          path: vice-snapshot-to-prg-converter-${{ env.VERSION }}-x86_64-macos.tar.gz
-          retention-days: 7
+      - name: Run clippy
+        run: cargo clippy --all-targets --lib --bins --examples -- -D warnings
 
-  # Create GitHub Release
-  create-release:
-    needs: [build-windows, build-linux, build-macos]
+  # Optional: Formatting check
+  format:
+    name: Format Check
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.create_release == 'true'
+
     steps:
-      - name: Set version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${{ github.ref_name }}"
-          fi
-          VERSION="${VERSION#v}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          files: |
-            windows-release/*
-            linux-release/*
-            macos-release/*
-          body: |
-            ## VICE Snapshot to PRG Converter ${{ env.VERSION }}
-            
-            ### Installation Options
-            
-            **Windows:**
-            - **MSI Installer (Recommended):** Installs to Program Files with Start Menu shortcuts
-            - **Portable ZIP:** Extract and run anywhere, no installation required
-            
-            **Linux:**
-            - **tar.gz:** Extract and run the binary directly
-            
-            **macOS:**
-            - **tar.gz:** Extract and run the binary directly
-            
-            ### Windows Security Warning
-            
-            Windows may show a SmartScreen warning because the installer is not code-signed.
-            This is normal for unsigned software. Click "More info" → "Run anyway".
-            The source code is available for review.
-            
-            ### Changes
-            
-            See [CHANGELOG.md](https://github.com/tommyo123/Vice_Snapshot_to_PRG/blob/main/CHANGELOG.md) for details.
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt -- --check
