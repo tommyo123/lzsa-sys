@@ -177,16 +177,40 @@ cargo test --release
 cargo doc --open
 ```
 
-## License
+# License
 
-This project is licensed under the **Zlib License** - see the [LICENSE](LICENSE) file for details.
+This project (lzsa-sys) is dual-licensed under:
+- **Zlib License** for the Rust bindings and most of the LZSA C code
+- **CC0 (Public Domain)** for matchfinder.c
 
-The underlying LZSA library by Emmanuel Marty is also licensed under the Zlib License.
+This matches the licensing of the underlying LZSA compression library by Emmanuel Marty.
 
-## Credits
+# License
 
-- **LZSA compression library**: [Emmanuel Marty](https://github.com/emmanuel-marty/lzsa)
-- **Rust bindings**: This project
+## lzsa-sys Rust Bindings
+
+Copyright (c) 2025 Tommy Olsen
+
+This Rust wrapper is licensed under the **Zlib License** to match the underlying LZSA library.
+
+## LZSA Compression Library
+
+The LZSA compression library by Emmanuel Marty is dual-licensed:
+
+- **Most of the code**: Zlib License (see [LICENSE-ZLIB.md](LICENSE-ZLIB.md))
+- **src/matchfinder.c**: CC0 1.0 Universal - Public Domain (see [LICENSE-CC0.md](LICENSE-CC0.md))
+
+### LZSA Copyright Notice
+
+Copyright (c) 2019 Emmanuel Marty
+
+The LZSA library is available at: https://github.com/emmanuel-marty/lzsa
+
+---
+
+For the full text of each license, please see:
+- [LICENSE-ZLIB.md](LICENSE-ZLIB.md) - Zlib License
+- [LICENSE-CC0.md](LICENSE-CC0.md) - CC0 1.0 Universal (Public Domain)
 
 ## Contributing
 
