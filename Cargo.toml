@@ -18,12 +18,17 @@ cmake = "0.1"
 bindgen = "0.69"
 cc = "1.2.41"
 
+# Production optimization profile
 [profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
-panic = 'abort'
+opt-level = 3           # Maximum optimization
+lto = true              # Link-time optimization (Rust side - this is OK!)
+codegen-units = 1       # Better optimization (slower compile, faster runtime)
+strip = true            # Remove debug symbols
+panic = 'abort'         # Smaller binary size
+
+# Development profile (faster compile times)
+[profile.dev]
+opt-level = 0           # No optimization for faster compile times
 
 [features]
 default = ["static"]

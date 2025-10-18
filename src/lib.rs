@@ -130,16 +130,9 @@ unsafe extern "C" {
     #[allow(dead_code)]
     fn lzsa_get_default_options() -> Options;
 
-    fn lzsa_get_max_compressed_size(
-        input_size: usize,
-        version: c_int,
-        mode: c_int,
-    ) -> usize;
+    fn lzsa_get_max_compressed_size(input_size: usize, version: c_int, mode: c_int) -> usize;
 
-    fn lzsa_get_max_decompressed_size(
-        compressed_data: *const u8,
-        compressed_size: usize,
-    ) -> usize;
+    fn lzsa_get_max_decompressed_size(compressed_data: *const u8, compressed_size: usize) -> usize;
 
     fn lzsa_compress(
         input: *const u8,
