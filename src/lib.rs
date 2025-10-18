@@ -1,4 +1,4 @@
-//! # lzsa
+//! # lzsa-sys
 //!
 //! Rust bindings for the LZSA compression library by Emmanuel Marty.
 //!
@@ -7,13 +7,13 @@
 //! ## Example
 //!
 //! ```rust
-//! use lzsa::{compress_v1, decompress};
+//! use lzsa_sys::{compress_v1, decompress};
 //!
 //! let original = b"Hello, world! This is test data.";
 //! let compressed = compress_v1(original)?;
 //! let decompressed = decompress(&compressed)?;
 //! assert_eq!(original, decompressed.as_slice());
-//! # Ok::<(), lzsa::Error>(())
+//! # Ok::<(), lzsa_sys::Error>(())
 //! ```
 
 use std::os::raw::c_int;
@@ -127,6 +127,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 // FFI bindings
 unsafe extern "C" {
+    #[allow(dead_code)]
     fn lzsa_get_default_options() -> Options;
 
     fn lzsa_get_max_compressed_size(
