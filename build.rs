@@ -51,6 +51,7 @@ fn main() {
     if target.contains("windows") && target.contains("msvc") {
         // Windows MSVC
         build.define("_CRT_SECURE_NO_WARNINGS", None);
+        build.flag("/MT");
 
         if is_release {
             build.flag("/O2"); // Maximum speed optimization
